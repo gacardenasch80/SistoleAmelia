@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Avatar Inteligente - Opción 3 (Canvas HTML5 a 60 FPS)</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #1e1e2e;
+            color: #cdd6f4;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        #avatar-container {
+            position: relative;
+            width: 360px;
+            max-width: 90vw;
+            height: 540px;
+            max-height: 65vh;
+            border-radius: 16px;
+            overflow: hidden;
+            border: 4px solid #89b4fa;
+            box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
+            background: #313244;
+            transition: box-shadow 0.3s ease, border-color 0.3s ease;
+        }
+
+        #avatar-canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+            object-fit: cover;
+        }
+
+        .talking#avatar-container,
+        #avatar-container.talking {
+            box-shadow: 0 0 35px rgba(137, 180, 250, 0.85);
+            border-color: #b4befe;
+        }
+
+        #controls {
+            margin-top: 20px;
+            text-align: center;
+            width: 100%;
+            max-width: 450px;
+        }
+
+        #chat-form {
+            display: flex;
+            gap: 8px;
+            justify-content: center;
+            align-items: center;
+            width: 100%;
+        }
+
+        #user-input {
+            flex: 1;
+            padding: 12px 16px;
+            font-size: 15px;
+            border-radius: 8px;
+            border: 2px solid #45475a;
+            background-color: #313244;
+            color: #cdd6f4;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        #user-input:focus {
+            border-color: #89b4fa;
+        }
+
+        button {
+            background-color: #89b4fa;
+            color: #11111b;
+            border: none;
+            padding: 12px 20px;
+            font-size: 15px;
+            font-weight: bold;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: transform 0.1s, background-color 0.2s;
+            white-space: nowrap;
+        }
+
+        button:hover {
+            background-color: #b4befe;
+        }
+
+        button:active {
+            transform: scale(0.95);
+        }
+
+        button:disabled {
+            background-color: #585b70;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        #status {
+            margin-top: 15px;
+            font-style: italic;
+            color: #a6adc8;
+            min-height: 40px;
+            padding: 0 10px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h1>Amelia - Opción 3: Renderizado Canvas 2D (60 FPS)</h1>
+
+    <div id="avatar-container">
+        <canvas id="avatar-canvas"></canvas>
+    </div>
+
+    <div id="controls">
+        <form id="chat-form">
+            <input type="text" id="user-input" placeholder="Escribe tu pregunta aquí..." autocomplete="off">
+            <button type="submit" id="btn-send">Enviar 🚀</button>
+        </form>
+        <div style="margin-top: 10px; display: flex; gap: 8px; justify-content: center;">
+            <button type="button" style="background-color: #45475a; color: #cdd6f4; font-size: 13px; padding: 8px 14px;" onclick="hablar('Hola, este es un mensaje de prueba para verificar el movimiento suave de mi boca.')">🔊 Probar Gesticulación Canvas</button>
+        </div>
+        <p id="status">Escribe una pregunta o presiona Probar Gesticulación Canvas.</p>
+    </div>
+
+    <script>
+        const chatForm = document.getElementById('chat-form');
+        const userInput = document.getElementById('user-input');
+        const btnSend = document.getElementById('btn-send');
+        const statusText = document.getElementById('status');
+        const avatarContainer = document.getElementById('avatar-container');
+        const canvas = document.getElementById('avatar-canvas');
+        const ctx = canvas.getContext('2d');
+        const GEMINI_API_KEY = localStorage.getItem('GEMINI_API_KEY') || 'TU_GEMINI_API_KEY_AQUI';
+
+        // Dimensiones internas HD para máxima nitidez
+        canvas.width = 720;
+        canvas.height = 1080;
+
+        // Carga de imágenes
+        const imgIdle = new Image(); imgIdle.src = 'Img/idle_hd.jpg';
+        const imgMid = new Image(); imgMid.src = 'Img/talking_mid.jpg';
+        const imgHigh = new Image(); imgHigh.src = 'Img/talking_hd.jpg';
+
+        let mouthState = 'idle'; // 'idle' | 'mid' | 'high'
+        let midAlpha = 0;
+        let highAlpha = 0;
+
+        // Bucle gráfico continuo a 60 FPS con interpolación exponencial (Lerp)
+        function drawFrame() {
+            // 1. Dibujar foto de fondo fija (Idle)
+            if (imgIdle.complete && imgIdle.naturalWidth !== 0) {
+                ctx.globalAlpha = 1.0;
+                ctx.drawImage(imgIdle, 0, 0, canvas.width, canvas.height);
+            }
+
+            // 2. Interpolación suave de transparencias (Suavizado de 60 FPS)
+            const targetMid = (mouthState === 'mid') ? 1.0 : 0.0;
+            const targetHigh = (mouthState === 'high') ? 1.0 : 0.0;
+
+            midAlpha += (targetMid - midAlpha) * 0.32;
+            highAlpha += (targetHigh - highAlpha) * 0.32;
+
+            // 3. Dibujar boca intermedia con máscara de recorte elíptica
+            if (midAlpha > 0.01 && imgMid.complete) {
+                ctx.save();
+                ctx.beginPath();
+                ctx.ellipse(canvas.width * 0.50, canvas.height * 0.35, canvas.width * 0.40, canvas.height * 0.24, 0, 0, Math.PI * 2);
+                ctx.clip();
+                ctx.globalAlpha = midAlpha;
+                ctx.drawImage(imgMid, 0, 0, canvas.width, canvas.height);
+                ctx.restore();
+            }
+
+            // 4. Dibujar boca abierta con máscara de recorte elíptica
+            if (highAlpha > 0.01 && imgHigh.complete) {
+                ctx.save();
+                ctx.beginPath();
+                ctx.ellipse(canvas.width * 0.50, canvas.height * 0.35, canvas.width * 0.40, canvas.height * 0.24, 0, 0, Math.PI * 2);
+                ctx.clip();
+                ctx.globalAlpha = highAlpha;
+                ctx.drawImage(imgHigh, 0, 0, canvas.width, canvas.height);
+                ctx.restore();
+            }
+
+            requestAnimationFrame(drawFrame);
+        }
+
+        // Iniciar renderizado
+        requestAnimationFrame(drawFrame);
+
+        // Control de visemas
+        function setAvatarMouthState(state) {
+            mouthState = state;
+        }
+
+        let lipSyncTimer = null;
+        let lipSyncTimeout = null;
+
+        function iniciarLipSync(texto) {
+            detenerLipSync();
+
+            const duracionEstimada = Math.max(3500, (texto || '').length * 80);
+            const visemaSecuencia = ['mid', 'high', 'mid', 'high', 'idle', 'mid', 'high', 'mid', 'high', 'high', 'mid', 'idle'];
+            let step = 0;
+
+            avatarContainer.classList.add('talking');
+            statusText.innerText = "El avatar está respondiendo...";
+
+            lipSyncTimer = setInterval(() => {
+                if (Math.random() < 0.08) {
+                    setAvatarMouthState('idle');
+                } else {
+                    setAvatarMouthState(visemaSecuencia[step % visemaSecuencia.length]);
+                    step++;
+                }
+            }, 90);
+
+            lipSyncTimeout = setTimeout(() => {
+                detenerLipSync();
+            }, duracionEstimada);
+        }
+
+        function detenerLipSync() {
+            if (lipSyncTimer) {
+                clearInterval(lipSyncTimer);
+                lipSyncTimer = null;
+            }
+            if (lipSyncTimeout) {
+                clearTimeout(lipSyncTimeout);
+                lipSyncTimeout = null;
+            }
+            avatarContainer.classList.remove('talking');
+            setAvatarMouthState('idle');
+        }
+
+        // Síntesis de voz
+        const synth = window.speechSynthesis;
+        let vocesDisponibles = [];
+        function cargarVoces() {
+            if (synth) {
+                vocesDisponibles = synth.getVoices();
+            }
+        }
+        cargarVoces();
+        if (synth && synth.onvoiceschanged !== undefined) {
+            synth.onvoiceschanged = cargarVoces;
+        }
+
+        function seleccionarVozFemeninaLatina(voces) {
+            if (!voces || voces.length === 0) return null;
+
+            const nombresMasculinos = ['jorge', 'pablo', 'raul', 'julio', 'miguel', 'carlos', 'mateo', 'tomas', 'alonso', 'enrique', 'david', 'male', 'hombre'];
+            const nombresFemeninosLatinos = ['sabina', 'dalia', 'salome', 'paulina', 'sofia', 'sofi', 'camila', 'jimena', 'hilda', 'lupe', 'francisca', 'zaira', 'paloma', 'monica', 'luz', 'google español', 'helena', 'elena'];
+            const codigosLatinos = ['es-co', 'es-mx', 'es-us', 'es-ar', 'es-cl', 'es-pe', 'es-419'];
+
+            let voz = voces.find(v => {
+                const lang = v.lang.toLowerCase();
+                const name = v.name.toLowerCase();
+                const esLatino = codigosLatinos.some(code => lang.includes(code));
+                const esFemenina = nombresFemeninosLatinos.some(nom => name.includes(nom));
+                const esMasculino = nombresMasculinos.some(nom => name.includes(nom));
+                return esLatino && esFemenina && !esMasculino;
+            });
+            if (voz) return voz;
+
+            voz = voces.find(v => {
+                const lang = v.lang.toLowerCase();
+                const name = v.name.toLowerCase();
+                const esLatino = codigosLatinos.some(code => lang.includes(code));
+                const esMasculino = nombresMasculinos.some(nom => name.includes(nom));
+                return esLatino && !esMasculino;
+            });
+            if (voz) return voz;
+
+            voz = voces.find(v => {
+                const lang = v.lang.toLowerCase();
+                const name = v.name.toLowerCase();
+                const esEspanol = lang.startsWith('es');
+                const esMasculino = nombresMasculinos.some(nom => name.includes(nom));
+                return esEspanol && !esMasculino;
+            });
+            if (voz) return voz;
+
+            return voces.find(v => v.lang.toLowerCase().startsWith('es')) || null;
+        }
+
+        function hablar(texto) {
+            if (synth && synth.speaking) {
+                synth.cancel();
+            }
+
+            iniciarLipSync(texto);
+
+            try {
+                const utterance = new SpeechSynthesisUtterance(texto);
+                const vozLatina = seleccionarVozFemeninaLatina(vocesDisponibles);
+
+                if (vozLatina) {
+                    utterance.voice = vozLatina;
+                    utterance.lang = vozLatina.lang;
+                } else {
+                    utterance.lang = 'es-MX';
+                }
+
+                utterance.onend = () => {
+                    userInput.disabled = false;
+                    btnSend.disabled = false;
+                    statusText.innerText = "Listo para tu siguiente pregunta.";
+                };
+
+                utterance.onerror = () => {
+                    userInput.disabled = false;
+                    btnSend.disabled = false;
+                    statusText.innerText = "Listo para tu siguiente pregunta.";
+                };
+
+                synth.speak(utterance);
+            } catch (err) {
+                console.warn("SpeechSynthesis error:", err);
+                userInput.disabled = false;
+                btnSend.disabled = false;
+            }
+        }
+
+        async function consultarGemini(preguntaUsuario) {
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${GEMINI_API_KEY}`;
+
+            const ahoraColombia = new Date().toLocaleString('es-CO', {
+                timeZone: 'America/Bogota',
+                dateStyle: 'full',
+                timeStyle: 'short'
+            });
+
+            const promptContexto = `Información de contexto en tiempo real: La fecha y hora actual exacta en Colombia es ${ahoraColombia}.
+Actúa como un asistente virtual interactivo conversacional muy amigable, simpático y expresivo. Tus respuestas deben ser sumamente breves y directas (máximo 2 frases u oraciones cortas), ya que tu respuesta será leída en voz alta por un avatar y no queremos aburrir al usuario. Da siempre datos precisos usando el contexto y nunca uses corchetes ni texto comodín. Responde de forma natural a esto: "${preguntaUsuario}"`;
+
+            const payload = {
+                contents: [{
+                    parts: [{
+                        text: promptContexto
+                    }]
+                }]
+            };
+
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Error en la API: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                return data.candidates[0].content.parts[0].text;
+
+            } catch (error) {
+                console.error("Error al consultar Gemini:", error);
+                return "Tuve un problema de conexión con mi cerebro artificial. ¿Podrías repetirme la pregunta?";
+            }
+        }
+
+        chatForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const mensajeUsuario = userInput.value.trim();
+            if (!mensajeUsuario) return;
+
+            userInput.disabled = true;
+            btnSend.disabled = true;
+            statusText.innerText = `Pensando respuesta para: "${mensajeUsuario}"...`;
+
+            const respuestaIA = await consultarGemini(mensajeUsuario);
+
+            if (respuestaIA) {
+                userInput.value = '';
+                hablar(respuestaIA);
+            } else {
+                userInput.disabled = false;
+                btnSend.disabled = false;
+            }
+        });
+    </script>
+</body>
+
+</html>
