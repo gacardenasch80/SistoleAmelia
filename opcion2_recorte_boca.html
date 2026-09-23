@@ -327,7 +327,13 @@
         }
 
         function getActiveApiKey() {
-            return localStorage.getItem('GEMINI_API_KEY') || atob('QVEuQWI4Uk42S0RzbUtfWS01TjBwYjk0RTd2dTRGWVQ5OXVKVjN0WmlCVHJWTGJRU1dxRXc=');
+            const activeNewKey = atob('QVEuQWI4Uk42S0RzbUtfWS01TjBwYjk0RTd2dTRGWVQ5OXVKVjN0WmlCVHJWTGJRU1dxRXc=');
+            const saved = localStorage.getItem('GEMINI_API_KEY');
+            if (!saved || saved.includes('AQ.Ab8RN6IxAe')) {
+                localStorage.removeItem('GEMINI_API_KEY');
+                return activeNewKey;
+            }
+            return saved;
         }
 
         function cambiarApiKey() {
