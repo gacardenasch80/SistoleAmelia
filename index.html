@@ -128,8 +128,9 @@
             <input type="text" id="user-input" placeholder="Escribe tu pregunta aquí..." autocomplete="off">
             <button type="submit" id="btn-send">Enviar 🚀</button>
         </form>
-        <div style="margin-top: 10px; display: flex; gap: 8px; justify-content: center;">
+        <div style="margin-top: 10px; display: flex; gap: 8px; justify-content: center; flex-wrap: wrap;">
             <button type="button" style="background-color: #45475a; color: #cdd6f4; font-size: 13px; padding: 8px 14px;" onclick="hablar('Hola, este es un mensaje de prueba para verificar el movimiento suave de mi boca.')">🔊 Probar Gesticulación Canvas</button>
+            <button type="button" style="background-color: #313244; border: 1px solid #89b4fa; color: #89b4fa; font-size: 13px; padding: 8px 14px;" onclick="cambiarApiKey()">🔑 Clave API</button>
         </div>
         <p id="status">Escribe una pregunta o presiona Probar Gesticulación Canvas.</p>
     </div>
@@ -334,12 +335,22 @@
             }
         }
 
-        async function consultarGemini(preguntaUsuario) {
-            const rawKey = (typeof GEMINI_API_KEY !== 'undefined' && GEMINI_API_KEY && GEMINI_API_KEY !== 'TU_GEMINI_API_KEY_AQUI')
-                ? GEMINI_API_KEY 
-                : atob('QVEuQWI4Uk42SXhBZU9xZzJSRE4zd2h1RUtFWWFNM25sMFhtQ3RHUDVUUEh1MWlFYks0dw==');
+        function getActiveApiKey() {
+            return localStorage.getItem('GEMINI_API_KEY') || atob('QVEuQWI4Uk42SXhBZU9xZzJSRE4zd2h1RUtFWWFNM25sMFhtQ3RHUDVUUEh1MWlFYks0dw==');
+        }
 
-            // Modelos soportados en orden de prioridad
+        function cambiarApiKey() {
+            const actual = getActiveApiKey();
+            const nueva = prompt("🔑 Ingresa tu API Key de Google AI Studio (empieza por AIzaSy...):\n\nSi no tienes una, créala gratis en: https://aistudio.google.com/app/apikey", actual);
+            if (nueva && nueva.trim()) {
+                localStorage.setItem('GEMINI_API_KEY', nueva.trim());
+                alert("✅ API Key guardada correctamente.");
+                statusText.innerText = "API Key actualizada. Haz tu pregunta.";
+            }
+        }
+
+        async function consultarGemini(preguntaUsuario) {
+            const rawKey = getActiveApiKey();
             const modelos = ['gemini-2.5-flash', 'gemini-3.6-flash', 'gemini-flash-latest', 'gemini-3.5-flash'];
 
             const ahoraColombia = new Date().toLocaleString('es-CO', {
@@ -387,7 +398,15 @@ Actúa como un asistente virtual interactivo conversacional muy amigable, simpá
                 }
             }
 
-            throw new Error(`Error en API Gemini (${ultimoError}). Verifica tu conexión.`);
+            if (ultimoError.includes("401") || ultimoError.includes("UNAUTHENTICATED") || ultimoError.includes("API_KEY_SERVICE_BLOCKED")) {
+                setTimeout(() => {
+                    if (confirm("⚠️ La clave de API de Gemini devolvió Error 401 (Credenciales bloqueadas por Google).\n\n¿Deseas ingresar tu clave de API gratuita de Google AI Studio?")) {
+                        cambiarApiKey();
+                    }
+                }, 400);
+            }
+
+            throw new Error(`Error en API Gemini (${ultimoError}). Haz clic en '🔑 Clave API' para actualizarla.`);
         }
 
         chatForm.addEventListener('submit', async (e) => {
