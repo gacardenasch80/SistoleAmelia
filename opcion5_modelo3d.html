@@ -1,0 +1,721 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Avatar Inteligente - Opción 5 (Modelo 3D Fluido)</title>
+    <meta name="description" content="Amelia Modelo 3D: renderizado fluido global de fotogramas sincronizado con fonemas en español, cámara inteligente y física continua.">
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #0d0e15;
+            color: #cdd6f4;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        #avatar-container {
+            position: relative;
+            width: 360px;
+            max-width: 90vw;
+            height: 540px;
+            max-height: 65vh;
+            border-radius: 16px;
+            overflow: hidden;
+            border: 4px solid #f38ba8;
+            box-shadow: 0 12px 32px rgba(0, 0, 0, 0.85);
+            background: #000000;
+            transition: box-shadow 0.3s ease, border-color 0.3s ease;
+        }
+
+        #avatar-canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+            object-fit: cover;
+            background: #000;
+        }
+
+        .talking#avatar-container,
+        #avatar-container.talking {
+            box-shadow: 0 0 35px rgba(243, 139, 168, 0.85);
+            border-color: #f5c2e7;
+        }
+
+        #controls {
+            margin-top: 20px;
+            text-align: center;
+            width: 100%;
+            max-width: 450px;
+        }
+
+        #chat-form {
+            display: flex;
+            gap: 8px;
+            justify-content: center;
+            align-items: center;
+            width: 100%;
+        }
+
+        #user-input {
+            flex: 1;
+            padding: 12px 16px;
+            font-size: 15px;
+            border-radius: 8px;
+            border: 2px solid #45475a;
+            background-color: #1e1e2e;
+            color: #cdd6f4;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        #user-input:focus {
+            border-color: #f38ba8;
+        }
+
+        button {
+            background-color: #f38ba8;
+            color: #11111b;
+            border: none;
+            padding: 12px 20px;
+            font-size: 15px;
+            font-weight: bold;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: transform 0.1s, background-color 0.2s;
+            white-space: nowrap;
+        }
+
+        button:hover {
+            background-color: #f5c2e7;
+        }
+
+        button:active {
+            transform: scale(0.95);
+        }
+
+        button:disabled {
+            background-color: #585b70;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-sec {
+            background-color: #313244;
+            color: #cdd6f4;
+            font-size: 13px;
+            padding: 8px 14px;
+        }
+
+        .btn-outline {
+            background-color: #1e1e2e;
+            border: 1px solid #f38ba8;
+            color: #f38ba8;
+            font-size: 13px;
+            padding: 8px 14px;
+        }
+
+        #status {
+            margin-top: 15px;
+            font-style: italic;
+            color: #a6adc8;
+            min-height: 40px;
+            padding: 0 10px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h1>Amelia - Opción 5: Modelo 3D (Interpolación Fluida)</h1>
+
+    <div id="avatar-container">
+        <canvas id="avatar-canvas"></canvas>
+    </div>
+
+    <div id="controls">
+        <form id="chat-form">
+            <input type="text" id="user-input" placeholder="Escribe tu pregunta aquí..." autocomplete="off">
+            <button type="submit" id="btn-send">Enviar 🚀</button>
+        </form>
+        <div style="margin-top: 10px; display: flex; gap: 8px; justify-content: center; flex-wrap: wrap;">
+            <button type="button" id="btn-test" class="btn-sec" onclick="hablar('Hola, soy Amelia en mi versión 3D. ¿Cómo ves mi gesticulación ahora?')">🔊 Probar</button>
+            <button type="button" id="btn-test-labios" class="btn-sec" onclick="hablar('Mamá, papá, bebé. ¡Excelente! Tu cita médica está confirmada.')">👄 Probar labios</button>
+            <button type="button" id="btn-framing" class="btn-outline" onclick="alternarEncuadre()">🎥 Plano: Busto</button>
+            <button type="button" id="btn-api" class="btn-outline" onclick="cambiarApiKey()">🔑 Clave API</button>
+        </div>
+        <p id="status">Escribe una pregunta o presiona Probar.</p>
+    </div>
+
+    <script>
+        const chatForm = document.getElementById('chat-form');
+        const userInput = document.getElementById('user-input');
+        const btnSend = document.getElementById('btn-send');
+        const statusText = document.getElementById('status');
+        const avatarContainer = document.getElementById('avatar-container');
+        const btnFraming = document.getElementById('btn-framing');
+        const canvas = document.getElementById('avatar-canvas');
+        const ctx = canvas.getContext('2d');
+        const GEMINI_API_KEY = localStorage.getItem('GEMINI_API_KEY') || atob('QVEuQWI4Uk42SXhBZU9xZzJSRE4zd2h1RUtFWWFNM25sMFhtQ3RHUDVUUEh1MWlFYks0dw==');
+
+        // =====================================================================
+        // CARGA DE FOTOGRAMAS 3D (Img4: 1920x1080 px)
+        // Ordenados progresivamente por apertura de mandíbula real
+        // 0: 0001 (cerrada / reposo)
+        // 1: 0008 (apertura mínima 159px / consonantes suaves)
+        // 2: 0007 (apertura media-baja 202px / i, u)
+        // 3: 0006 (apertura media 353px / e)
+        // 4: 0003 (apertura media-alta 525px / o)
+        // 5: 0004 (apertura máxima 622px / a)
+        // =====================================================================
+        const SRC_W = 1920, SRC_H = 1080;
+        const W = canvas.width = 720;
+        const H = canvas.height = 1080;
+        const DEBUG = new URLSearchParams(location.search).has('debug');
+
+        const FRAME_FILES = [
+            'Img4/Gesticulacion__1_0001.png', // 0.00: Reposo cerrado
+            'Img4/Gesticulacion__1_0008.png', // 0.20: Apertura sutil
+            'Img4/Gesticulacion__1_0007.png', // 0.40: Apertura media-baja
+            'Img4/Gesticulacion__1_0006.png', // 0.60: Apertura media
+            'Img4/Gesticulacion__1_0003.png', // 0.80: Apertura media-alta
+            'Img4/Gesticulacion__1_0004.png'  // 1.00: Apertura completa
+        ];
+
+        const imgFrames = FRAME_FILES.map(src => {
+            const img = new Image();
+            img.src = src;
+            return img;
+        });
+
+        const ready = (img) => img && img.complete && img.naturalWidth > 0;
+        const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+        const smoothstep = (e0, e1, x) => { const t = clamp((x - e0) / (e1 - e0), 0, 1); return t * t * (3 - 2 * t); };
+
+        // =====================================================================
+        // CÁMARA (Encuadre de Busto vs Plano Completo)
+        // =====================================================================
+        const CAM_IDLE = { cx: 960, cy: 360, w: 450 };              // Plano de busto enfocado
+        const CAM_TALK = { cx: 960, cy: 325, w: 400 };              // Zoom sutil al hablar
+        const CAM_FULL = { cx: 960, cy: 540, w: 720 };              // Plano medio cuerpo
+        let framing = 'busto';
+        const cam = { ...CAM_IDLE };
+        const camEff = { sx: 0, sy: 0, w: 450, h: 675, s: W / 450 };
+        let camPulse = 0;
+
+        function calcularCamEff(cx, cy, w) {
+            w = Math.min(w, SRC_W, SRC_H * (2 / 3));
+            const h = w * 1.5;
+            camEff.w = w; camEff.h = h;
+            camEff.sx = clamp(cx - w / 2, 0, SRC_W - w);
+            camEff.sy = clamp(cy - h / 2, 0, SRC_H - h);
+            camEff.s = W / w;
+        }
+
+        function drawCam(c, img, alpha = 1.0) {
+            if (alpha <= 0.005 || !ready(img)) return;
+            c.globalAlpha = alpha;
+            const kx = img.naturalWidth / SRC_W;
+            const ky = img.naturalHeight / SRC_H;
+            c.drawImage(img, camEff.sx * kx, camEff.sy * ky, camEff.w * kx, camEff.h * ky, 0, 0, W, H);
+            c.globalAlpha = 1.0;
+        }
+
+        function alternarEncuadre() {
+            framing = framing === 'busto' ? 'completo' : 'busto';
+            btnFraming.innerText = framing === 'busto' ? '🎥 Plano: Busto' : '🎥 Plano: Completo';
+        }
+
+        // =====================================================================
+        // MOTOR DE MEZCLA GLOBAL SUAVE (OPCIÓN B - SIN MÁSCARAS NI COSTURAS)
+        // =====================================================================
+        let jawTarget = 0, jawOpen = 0, jawVel = 0;
+
+        function renderAvatar(c) {
+            const totalSegments = imgFrames.length - 1; // 5 intervalos
+            const scaled = clamp(jawOpen, 0, 1) * totalSegments;
+            const idx0 = Math.floor(scaled);
+            const idx1 = Math.min(totalSegments, idx0 + 1);
+            const progress = scaled - idx0;
+
+            // Interpolación de Hermite (suavizado continuo)
+            const blend = smoothstep(0.0, 1.0, progress);
+
+            // Siempre se dibuja el fotograma inferior a plena opacidad como fondo
+            drawCam(c, imgFrames[idx0], 1.0);
+
+            // Si hay transición hacia el siguiente nivel de apertura, se superpone suavemente
+            if (blend > 0.01 && idx1 !== idx0) {
+                drawCam(c, imgFrames[idx1], blend);
+            }
+        }
+
+        // =====================================================================
+        // MOTOR FONÉTICO ESPAÑOL (Texto → Visemas)
+        // =====================================================================
+        const VOCALES = { a: 1.0, 'á': 1.0, o: 0.85, 'ó': 0.88, e: 0.60, 'é': 0.62, i: 0.40, 'í': 0.42, u: 0.40, 'ú': 0.42, 'ü': 0.40 };
+        const CONSONANTES = {
+            m: 0, b: 0, p: 0, v: 0,              // Bilabiales cerradas (clave para realismo)
+            f: 0.15,
+            l: 0.35, d: 0.30, t: 0.30, n: 0.32, s: 0.28, z: 0.28, c: 0.30, k: 0.30, q: 0.30,
+            g: 0.35, j: 0.38, x: 0.32, y: 0.35, 'ñ': 0.32, r: 0.35, w: 0.38
+        };
+        const DUR_CONS = { m: 75, b: 70, p: 75, v: 70, r: 40 };
+
+        function textoAVisemas(texto, rate = 1) {
+            const s = texto.toLowerCase();
+            const entries = [];
+            let t = 0;
+            const push = (open, dur, ci) => { entries.push({ t, open, ci }); t += dur / rate; };
+
+            for (let i = 0; i < s.length; i++) {
+                const c = s[i], next = s[i + 1], prev = s[i - 1];
+                if (c === 'h') continue;
+                if (c === 'u' && (prev === 'q' || (prev === 'g' && (next === 'e' || next === 'i')))) continue;
+                if (c === 'l' && next === 'l') { push(0.38, 65, i); i++; continue; }
+                if (c === 'c' && next === 'h') { push(0.36, 70, i); i++; continue; }
+                if (c === 'r' && next === 'r') { push(0.38, 85, i); i++; continue; }
+
+                if (VOCALES[c] !== undefined) {
+                    let o = VOCALES[c] * (0.94 + Math.random() * 0.12);
+                    const diptongo = VOCALES[next] !== undefined;
+                    push(clamp(o, 0, 1), diptongo ? 60 : 88, i);
+                    continue;
+                }
+                if (CONSONANTES[c] !== undefined) { push(CONSONANTES[c], DUR_CONS[c] || 55, i); continue; }
+                if (/\d/.test(c)) { push(0.4, 90, i); push(0.9, 90, i); push(0.4, 70, i); continue; }
+                if (c === ' ' || c === '\n' || c === '\t') {
+                    const prevOpen = entries.length ? entries[entries.length - 1].open : 0;
+                    push(prevOpen * 0.4, 35, i);
+                    continue;
+                }
+                if (c === ',' || c === ';' || c === ':') { push(0, 210, i); continue; }
+                if ('.!?…'.includes(c)) { push(0, 330, i); continue; }
+            }
+            entries.push({ t, open: 0, ci: s.length });
+
+            const charToIdx = new Int32Array(s.length + 1);
+            let k = entries.length - 1;
+            for (let ci = s.length; ci >= 0; ci--) {
+                while (k > 0 && entries[k - 1].ci >= ci) k--;
+                charToIdx[ci] = k;
+            }
+            return { entries, charToIdx, total: t, texto };
+        }
+
+        // =====================================================================
+        // SINCRONIZACIÓN Y ADAPTACIÓN DE VOZ
+        // =====================================================================
+        const ANTICIPACION_MS = 40;
+        const speech = {
+            active: false, timeline: null, idx: 0,
+            segStart: 0, segOffset: 0, speed: 1, lastB: null,
+            started: false, simulated: false, boundaries: 0
+        };
+        let speechSession = 0;
+        let timers = [];
+
+        function timelineTime(now) {
+            return speech.segOffset + (now - speech.segStart) * speech.speed;
+        }
+
+        function iniciarTimeline(tl) {
+            speech.timeline = tl;
+            speech.idx = 0;
+            speech.segStart = performance.now();
+            speech.segOffset = 0;
+            speech.lastB = null;
+        }
+
+        function onBoundary(e, tl) {
+            if (speech.timeline !== tl || (e.name && e.name !== 'word')) return;
+            speech.boundaries++;
+            const now = performance.now();
+            const ci = clamp(e.charIndex || 0, 0, tl.charToIdx.length - 1);
+            const k = tl.charToIdx[ci];
+            const targetT = tl.entries[k].t;
+
+            if (speech.lastB) {
+                const dReal = now - speech.lastB.now, dTl = targetT - speech.lastB.t;
+                if (dReal > 80 && dTl > 0) {
+                    const r = clamp(dTl / dReal, 0.6, 1.7);
+                    speech.speed = speech.speed * 0.6 + r * 0.4;
+                }
+            }
+            speech.lastB = { now, t: targetT };
+
+            if (Math.abs(targetT - timelineTime(now)) > 60) {
+                speech.segOffset = targetT;
+                speech.segStart = now;
+                speech.idx = k;
+            }
+        }
+
+        function actualizarJawTarget(now) {
+            const tl = speech.timeline;
+            if (!tl) { jawTarget = 0; return; }
+            const tm = timelineTime(now) + ANTICIPACION_MS;
+            const E = tl.entries;
+            if (speech.idx > 0 && E[speech.idx].t > tm) speech.idx = tl.charToIdx[0];
+            while (speech.idx < E.length - 1 && E[speech.idx + 1].t <= tm) speech.idx++;
+            if (tm >= tl.total) {
+                const sigueHablando = !speech.simulated && synth && synth.speaking;
+                jawTarget = sigueHablando ? 0.35 + 0.3 * Math.abs(Math.sin(now * 0.016)) : 0;
+            } else {
+                jawTarget = E[speech.idx].open;
+            }
+        }
+
+        function limpiarTexto(texto) {
+            return (texto || '')
+                .replace(/[*_#`>~|]/g, ' ')
+                .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}\u{200D}]/gu, '')
+                .replace(/\s+/g, ' ')
+                .trim();
+        }
+
+        function dividirEnFrases(texto) {
+            let partes = texto.match(/[^.!?…]+(?:[.!?…]+|$)["')\]]*\s*/g) || [texto];
+            const out = [];
+            for (let p of partes) {
+                p = p.trim();
+                if (!p) continue;
+                if (p.length > 220) {
+                    out.push(...p.split(/(?<=,)\s+/).filter(Boolean));
+                } else if (p.length < 4 && out.length) {
+                    out[out.length - 1] += ' ' + p;
+                } else {
+                    out.push(p);
+                }
+            }
+            return out.length ? out : [texto];
+        }
+
+        function limpiarTimers() { timers.forEach(clearTimeout); timers = []; }
+
+        function finalizarHabla() {
+            limpiarTimers();
+            speech.active = false;
+            speech.timeline = null;
+            speech.simulated = false;
+            avatarContainer.classList.remove('talking');
+            userInput.disabled = false;
+            btnSend.disabled = false;
+            statusText.innerText = "Listo para tu siguiente pregunta.";
+        }
+
+        function simularSecuencia(timelines, session) {
+            speech.simulated = true;
+            let i = 0;
+            const siguiente = () => {
+                if (session !== speechSession || !speech.simulated) return;
+                if (i >= timelines.length) { finalizarHabla(); return; }
+                const tl = timelines[i++];
+                iniciarTimeline(tl);
+                camPulse = Math.max(camPulse, 0.012);
+                timers.push(setTimeout(siguiente, tl.total + 180));
+            };
+            siguiente();
+        }
+
+        // =====================================================================
+        // BUCLE PRINCIPAL DE RENDER (60 FPS)
+        // =====================================================================
+        let lastNow = performance.now(), acc = 0, fps = 60;
+
+        function drawFrame(now) {
+            const dt = clamp(now - lastNow, 1, 100);
+            lastNow = now;
+            fps = fps * 0.95 + (1000 / dt) * 0.05;
+            const k60 = dt / 16.667;
+
+            // Transición suave de cámara y respiración orgánica
+            const objetivo = framing === 'completo' ? CAM_FULL : (speech.active ? CAM_TALK : CAM_IDLE);
+            const fc = 1 - Math.pow(1 - 0.035, k60);
+            cam.cx += (objetivo.cx - cam.cx) * fc;
+            cam.cy += (objetivo.cy - cam.cy) * fc;
+            cam.w += (objetivo.w - cam.w) * fc;
+            camPulse *= Math.pow(0.95, k60);
+
+            const respiracion = Math.sin(now * 0.0013);
+            calcularCamEff(cam.cx, cam.cy + respiracion * 0.6, cam.w / (1 + respiracion * 0.003 + camPulse));
+
+            // Física de mandíbula a 60 Hz fija con resorte amortiguado
+            actualizarJawTarget(now);
+            acc = Math.min(acc + dt, 100);
+            while (acc >= 16.667) {
+                jawVel += (jawTarget - jawOpen) * 0.38;
+                jawVel *= 0.52;
+                jawOpen = clamp(jawOpen + jawVel, 0, 1);
+                acc -= 16.667;
+            }
+
+            // Fondo negro limpio
+            ctx.fillStyle = '#000000';
+            ctx.fillRect(0, 0, W, H);
+
+            // Renderizado completo sin máscaras ni costuras
+            renderAvatar(ctx);
+
+            if (DEBUG) {
+                ctx.save();
+                ctx.fillStyle = 'rgba(17,17,27,0.78)';
+                ctx.fillRect(10, 10, 360, 120);
+                ctx.fillStyle = '#cdd6f4';
+                ctx.font = '20px monospace';
+                ctx.fillText(`FPS: ${fps.toFixed(0)}  jaw: ${jawOpen.toFixed(2)}→${jawTarget.toFixed(2)}`, 20, 38);
+                ctx.fillText(`speed: ${speech.speed.toFixed(2)}  boundaries: ${speech.boundaries}`, 20, 64);
+                ctx.fillText(`cam: ${camEff.sx.toFixed(0)},${camEff.sy.toFixed(0)} w${camEff.w.toFixed(0)}`, 20, 90);
+                ctx.fillStyle = '#45475a'; ctx.fillRect(20, 100, 330, 18);
+                ctx.fillStyle = '#f38ba8'; ctx.fillRect(20, 100, 330 * jawOpen, 18);
+                ctx.restore();
+            }
+
+            requestAnimationFrame(drawFrame);
+        }
+
+        requestAnimationFrame(drawFrame);
+
+        // =====================================================================
+        // SÍNTESIS DE VOZ Y CONEXIÓN A GEMINI
+        // =====================================================================
+        const synth = window.speechSynthesis;
+        let vocesDisponibles = [];
+        function cargarVoces() {
+            if (synth) vocesDisponibles = synth.getVoices();
+        }
+        cargarVoces();
+        if (synth && synth.onvoiceschanged !== undefined) {
+            synth.onvoiceschanged = cargarVoces;
+        }
+
+        function seleccionarVozFemeninaLatina(voces) {
+            if (!voces || voces.length === 0) return null;
+
+            const nombresMasculinos = ['jorge', 'pablo', 'raul', 'julio', 'miguel', 'carlos', 'mateo', 'tomas', 'alonso', 'enrique', 'david', 'male', 'hombre'];
+            const nombresFemeninosLatinos = ['sabina', 'dalia', 'salome', 'paulina', 'sofia', 'sofi', 'camila', 'jimena', 'hilda', 'lupe', 'francisca', 'zaira', 'paloma', 'monica', 'luz', 'google español', 'helena', 'elena'];
+            const codigosLatinos = ['es-co', 'es-mx', 'es-us', 'es-ar', 'es-cl', 'es-pe', 'es-419'];
+
+            let voz = voces.find(v => {
+                const lang = v.lang.toLowerCase();
+                const name = v.name.toLowerCase();
+                const esLatino = codigosLatinos.some(code => lang.includes(code));
+                const esFemenina = nombresFemeninosLatinos.some(nom => name.includes(nom));
+                const esMasculino = nombresMasculinos.some(nom => name.includes(nom));
+                return esLatino && esFemenina && !esMasculino;
+            });
+            if (voz) return voz;
+
+            voz = voces.find(v => {
+                const lang = v.lang.toLowerCase();
+                const name = v.name.toLowerCase();
+                const esLatino = codigosLatinos.some(code => lang.includes(code));
+                const esMasculino = nombresMasculinos.some(nom => name.includes(nom));
+                return esLatino && !esMasculino;
+            });
+            if (voz) return voz;
+
+            voz = voces.find(v => {
+                const lang = v.lang.toLowerCase();
+                const name = v.name.toLowerCase();
+                const esEspanol = lang.startsWith('es');
+                const esMasculino = nombresMasculinos.some(nom => name.includes(nom));
+                return esEspanol && !esMasculino;
+            });
+            if (voz) return voz;
+
+            return voces.find(v => v.lang.toLowerCase().startsWith('es')) || null;
+        }
+
+        const RATE = 1.0;
+
+        function hablar(textoOriginal) {
+            const session = ++speechSession;
+            if (synth) synth.cancel();
+            limpiarTimers();
+
+            const texto = limpiarTexto(textoOriginal);
+            if (!texto) { finalizarHabla(); return; }
+
+            const frases = dividirEnFrases(texto);
+            const timelines = frases.map(f => textoAVisemas(f, RATE));
+            const totalEstimado = timelines.reduce((a, tl) => a + tl.total, 0);
+
+            speech.active = true;
+            speech.timeline = null;
+            speech.started = false;
+            speech.simulated = false;
+            speech.speed = 1;
+            speech.boundaries = 0;
+            avatarContainer.classList.add('talking');
+            statusText.innerText = "El avatar está respondiendo...";
+
+            if (!synth) { simularSecuencia(timelines, session); return; }
+
+            try {
+                const vozLatina = seleccionarVozFemeninaLatina(vocesDisponibles);
+                frases.forEach((frase, i) => {
+                    const tl = timelines[i];
+                    const u = new SpeechSynthesisUtterance(frase);
+                    if (vozLatina) { u.voice = vozLatina; u.lang = vozLatina.lang; }
+                    else { u.lang = 'es-MX'; }
+                    u.rate = RATE;
+
+                    u.onstart = () => {
+                        if (session !== speechSession) return;
+                        if (speech.simulated) { limpiarTimers(); speech.simulated = false; programarSeguridad(session, totalEstimado); }
+                        speech.started = true;
+                        iniciarTimeline(tl);
+                        camPulse = Math.max(camPulse, 0.012);
+                    };
+                    u.onboundary = (e) => {
+                        if (session !== speechSession) return;
+                        onBoundary(e, tl);
+                    };
+                    u.onend = () => {
+                        if (session !== speechSession) return;
+                        if (i === frases.length - 1) finalizarHabla();
+                        else if (speech.timeline === tl) speech.timeline = null;
+                    };
+                    u.onerror = (e) => {
+                        if (session !== speechSession) return;
+                        if (e.error === 'interrupted' || e.error === 'canceled') return;
+                        console.warn('SpeechSynthesis error:', e.error);
+                        finalizarHabla();
+                    };
+                    synth.speak(u);
+                });
+
+                timers.push(setTimeout(() => {
+                    if (session === speechSession && !speech.started) simularSecuencia(timelines, session);
+                }, 2000));
+                programarSeguridad(session, totalEstimado);
+            } catch (err) {
+                console.warn("SpeechSynthesis error:", err);
+                simularSecuencia(timelines, session);
+            }
+        }
+
+        function programarSeguridad(session, totalEstimado) {
+            timers.push(setTimeout(() => {
+                if (session === speechSession && speech.active) {
+                    if (synth && synth.speaking) { programarSeguridad(session, 3000); return; }
+                    finalizarHabla();
+                }
+            }, totalEstimado * 1.6 + 4000));
+        }
+
+        function getActiveApiKey() {
+            const activeNewKey = atob('QVEuQWI4Uk42S0RzbUtfWS01TjBwYjk0RTd2dTRGWVQ5OXVKVjN0WmlCVHJWTGJRU1dxRXc=');
+            const saved = localStorage.getItem('GEMINI_API_KEY');
+            if (!saved || saved.includes('AQ.Ab8RN6IxAe')) {
+                localStorage.removeItem('GEMINI_API_KEY');
+                return activeNewKey;
+            }
+            return saved;
+        }
+
+        function cambiarApiKey() {
+            const actual = getActiveApiKey();
+            const nueva = prompt("🔑 Ingresa tu API Key de Google AI Studio (empieza por AIzaSy...):\n\nSi no tienes una, créala gratis en: https://aistudio.google.com/app/apikey", actual);
+            if (nueva && nueva.trim()) {
+                localStorage.setItem('GEMINI_API_KEY', nueva.trim());
+                alert("✅ API Key guardada correctamente.");
+                statusText.innerText = "API Key actualizada. Haz tu pregunta.";
+            }
+        }
+
+        async function consultarGemini(preguntaUsuario) {
+            const rawKey = getActiveApiKey();
+            const modelos = ['gemini-2.5-flash', 'gemini-3.6-flash', 'gemini-flash-latest', 'gemini-3.5-flash'];
+
+            const ahoraColombia = new Date().toLocaleString('es-CO', {
+                timeZone: 'America/Bogota',
+                dateStyle: 'full',
+                timeStyle: 'short'
+            });
+
+            const promptContexto = `Información de contexto en tiempo real: La fecha y hora actual exacta en Colombia es ${ahoraColombia}.
+Actúa como un asistente virtual interactivo conversacional muy amigable, simpático y expresivo. Tus respuestas deben ser sumamente breves y directas (máximo 2 frases u oraciones cortas), ya que tu respuesta será leída en voz alta por un avatar y no queremos aburrir al usuario. Da siempre datos precisos usando el contexto y nunca uses corchetes ni texto comodín. Responde de forma natural a esto: "${preguntaUsuario}"`;
+
+            const payload = {
+                contents: [{
+                    parts: [{ text: promptContexto }]
+                }]
+            };
+
+            let ultimoError = '';
+
+            for (const model of modelos) {
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${rawKey}`;
+                try {
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data && data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts) {
+                            const partConTexto = data.candidates[0].content.parts.find(p => p.text);
+                            if (partConTexto && partConTexto.text) {
+                                return partConTexto.text;
+                            }
+                        }
+                    } else {
+                        const errJson = await response.json().catch(() => ({}));
+                        ultimoError = `HTTP ${response.status}: ${errJson.error?.message || response.statusText}`;
+                        console.warn(`Intento fallido con ${model}:`, ultimoError);
+                    }
+                } catch (err) {
+                    ultimoError = err.message || 'Error de conexión de red';
+                    console.warn(`Error de red con ${model}:`, err);
+                }
+            }
+
+            if (ultimoError.includes("401") || ultimoError.includes("UNAUTHENTICATED") || ultimoError.includes("API_KEY_SERVICE_BLOCKED")) {
+                setTimeout(() => {
+                    if (confirm("⚠️ La clave de API de Gemini devolvió Error 401 (Credenciales bloqueadas por Google).\n\n¿Deseas ingresar tu clave de API gratuita de Google AI Studio?")) {
+                        cambiarApiKey();
+                    }
+                }, 400);
+            }
+
+            throw new Error(`Error en API Gemini (${ultimoError}). Haz clic en '🔑 Clave API' para actualizarla.`);
+        }
+
+        chatForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const mensajeUsuario = userInput.value.trim();
+            if (!mensajeUsuario) return;
+
+            userInput.disabled = true;
+            btnSend.disabled = true;
+            statusText.innerText = `Pensando respuesta para: "${mensajeUsuario}"...`;
+
+            try {
+                const respuestaIA = await consultarGemini(mensajeUsuario);
+                if (respuestaIA) {
+                    userInput.value = '';
+                    hablar(respuestaIA);
+                }
+            } catch (err) {
+                console.error("Error al consultar Gemini:", err);
+                statusText.innerText = `⚠️ ${err.message}`;
+                userInput.disabled = false;
+                btnSend.disabled = false;
+            }
+        });
+    </script>
+</body>
+
+</html>

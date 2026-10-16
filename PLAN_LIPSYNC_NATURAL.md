@@ -178,8 +178,12 @@ const APERTURA = {
 - [ ] Revisar en la consola que no haya errores y que el FPS sea estable (DevTools > Performance).
 - [ ] Actualizar `index.html` con un enlace a la opción 4, **solo si el usuario lo pide**.
 
-### 2.1 Ronda de ajustes (pendiente de que el usuario los indique)
-- [ ] _(Anotar aquí cada mejora que pida el usuario, con su estado.)_
+### 2.1 Ronda de ajustes y nuevas variantes
+- [x] **Opción 5 (`opcion5_modelo3d.html`):** Adaptación del motor para el modelo 3D con imágenes en `Img4/` (1920x1080).
+  - Escala y calibración de boca en `x: 960, y: 310, rx: 42, ry: 30`.
+  - Ojos calibrados en `x: 930` y `990`, `y: 232` con párpado procedural adaptado al tono de piel.
+  - Mezcla continua multi-nivel (5 fotogramas de visemas graduados de 0001 a 0004).
+  - Conserva todas las ventajas: encuadre de busto, zoom reactivo, parpadeo, respiración, inclinación y sincronización fonética en español.
 
 ---
 
@@ -202,3 +206,5 @@ const APERTURA = {
 | 2026-10-16 | Claude | 1–9 | Creado `opcion4_lipsync_natural.html` con encuadre de busto y zoom, máscaras difuminadas (`destination-in`), mandíbula con resorte a 60 Hz fijos, visemas en español, sincronización con `onstart`/`onboundary`/`onend` y adaptación de velocidad, frases encoladas, simulación si no hay voz, parpadeo procedural (estira la piel del párpado), respiración, micro-movimiento de cabeza en una capa difuminada, gestos con `?`, `!` y MAYÚSCULAS, y overlay `?debug`. |
 | 2026-10-16 | Claude | 10 | Sintaxis y visemas validados en Node. **Pendiente:** validación visual (el navegador de la IA falló). Posibles ajustes: radios de la máscara, `LID_DY` del párpado y amplitud del movimiento de cabeza. |
 | 2026-10-16 | Usuario | 10 | Validación visual OK: le gusta la gesticulación, el zoom al hablar y el parpadeo natural. Quedan mejoras por definir (sección 2.1). |
+| 2026-10-16 | Gemini | 11 | Creado `opcion5_modelo3d.html` integrando la secuencia de fotogramas de `Img4/` (1920x1080 px). Inicialmente con máscara de recorte elíptica. |
+| 2026-10-16 | Gemini | 12 | **Refactorización Opción 5 (Opción B):** Eliminadas las máscaras elípticas estáticas que causaban deformación y doble mentón. Implementada interpolación global Hermite de fotogramas completos (`0001` a `0004`) sincronizada con fonemas, física de resorte y cámara de busto. Cero costuras ni desalineaciones. |
