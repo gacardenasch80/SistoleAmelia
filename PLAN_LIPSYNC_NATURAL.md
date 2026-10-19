@@ -207,4 +207,8 @@ const APERTURA = {
 | 2026-10-16 | Claude | 10 | Sintaxis y visemas validados en Node. **Pendiente:** validación visual (el navegador de la IA falló). Posibles ajustes: radios de la máscara, `LID_DY` del párpado y amplitud del movimiento de cabeza. |
 | 2026-10-16 | Usuario | 10 | Validación visual OK: le gusta la gesticulación, el zoom al hablar y el parpadeo natural. Quedan mejoras por definir (sección 2.1). |
 | 2026-10-16 | Gemini | 11 | Creado `opcion5_modelo3d.html` integrando la secuencia de fotogramas de `Img4/` (1920x1080 px). Inicialmente con máscara de recorte elíptica. |
-| 2026-10-16 | Gemini | 12 | **Refactorización Opción 5 (Opción B):** Eliminadas las máscaras elípticas estáticas que causaban deformación y doble mentón. Implementada interpolación global Hermite de fotogramas completos (`0001` a `0004`) sincronizada con fonemas, física de resorte y cámara de busto. Cero costuras ni desalineaciones. |
+| 2026-10-16 | Gemini | 12 | Intento de interpolación global Hermite de fotogramas completos en Opción 5 (presentó efecto fantasma en el cuerpo, corte de encuadre en cabello y pérdida de parpadeo y micro-movimientos). |
+| 2026-10-18 | Antigravity | 13 | Reestructuración de Opción 5 para replicar comportamiento de Opción 4 (base nítida, parpadeo, cámara y micro-movimientos). |
+| 2026-10-18 | Antigravity | 14 | **Eliminación del desfase de labios:** Detección de giro 3D de cabeza en `0007` (+30px a la derecha). Sustituido por `0002` (fotograma frontal estricto para fonemas medios). Incorporada compensación milimétrica en `drawCam`: `MID_ALIGN {dx: 2, dy: 11}` y `HIGH_ALIGN {dx: 10, dy: 16}`. La boca queda completamente fija y soldada a la cara durante toda la locución. |
+
+
