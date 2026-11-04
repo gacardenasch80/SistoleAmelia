@@ -166,23 +166,25 @@
         const btnFraming = document.getElementById('btn-framing');
         const canvas = document.getElementById('avatar-canvas');
         const ctx = canvas.getContext('2d');
-        const GEMINI_API_KEY = localStorage.getItem('GEMINI_API_KEY') || atob('QVEuQWI4Uk42SXhBZU9xZzJSRE4zd2h1RUtFWWFNM25sMFhtQ3RHUDVUUEh1MWlFYks0dw==');
 
         // =====================================================================
         // PASO 2 · Geometría (coordenadas en la imagen ORIGINAL 848x1264)
-        // Calibrado con recortes ampliados de Img/idle_hd.jpg y Img/talking_*.jpg
+        // Calibra con ?debug: haz clic en el centro de cada ojo / la boca
         // =====================================================================
         const SRC_W = 848, SRC_H = 1264;
-        const MOUTH = { x: 442, y: 335, rx: 32, ry: 26 };          // boca (máscara difuminada)
+        const MOUTH = { x: 442, y: 335, rx: 38, ry: 30 };          // boca
         const EYES = [
-            { x: 418, y: 281, rx: 13, ry: 6 },                      // ojo izquierdo (en pantalla)
+            { x: 388, y: 281, rx: 13, ry: 6 },                      // ojo izquierdo (REVISAR con ?debug)
             { x: 468, y: 285, rx: 13, ry: 6 }                       // ojo derecho
         ];
-        const LID_DY = -10;                                          // franja de piel del párpado (sobre el ojo)
         const HEAD = { x: 442, y: 272, rx: 74, ry: 112 };            // cabeza (micro-movimiento)
         const MID_ALIGN = { dx: 0, dy: 2.5 };                        // talking_mid.jpg está ~2.5px más arriba
         const HIGH_ALIGN = { dx: 0, dy: 0 };
+        const BLINK_ALIGN = null;                                    // si idle_blink.jpg sale desplazado: { dx: 0, dy: 1 }
         const DEBUG = new URLSearchParams(location.search).has('debug');
+
+        // Región de mezcla de los ojos: algo mayor que el ojo para que el borde se difumine sin cortes
+        const EYE_BLEND = EYES.map(e => ({ x: e.x, y: e.y, rx: e.rx * 1.9, ry: e.ry * 2.8 }));
 
         // Lienzo interno HD (2:3, igual que el contenedor 360x540)
         const W = canvas.width = 720;
@@ -191,13 +193,14 @@
         // Lienzos auxiliares fuera de pantalla
         function crearCapa() { const c = document.createElement('canvas'); c.width = W; c.height = H; return c; }
         const maskCv = crearCapa(), mctx = maskCv.getContext('2d');   // máscara temporal
-        const faceCv = crearCapa(), fctx = faceCv.getContext('2d');   // cara compuesta (boca + párpados)
+        const faceCv = crearCapa(), fctx = faceCv.getContext('2d');   // cara compuesta (boca + ojos)
         const headCv = crearCapa(), hctx = headCv.getContext('2d');   // cabeza con movimiento
 
-        // Carga de imágenes (ahora desde Img6)
-        const imgIdle = new Image(); imgIdle.src = './Img6/idle_hd.jpg';
-        const imgMid = new Image(); imgMid.src = './Img6/talking_mid.jpg';
-        const imgHigh = new Image(); imgHigh.src = './Img6/talking_hd.jpg';
+        // Carga de imágenes
+        const imgIdle = new Image(); imgIdle.src = 'Img6/idle_hd.jpg';
+        const imgMid = new Image(); imgMid.src = 'Img6/talking_mid.jpg';
+        const imgHigh = new Image(); imgHigh.src = 'Img6/talking_hd.jpg';
+        const imgBlink = new Image(); imgBlink.src = 'Img6/idle_blink.jpg';   // ojos cerrados
         const ready = (img) => img.complete && img.naturalWidth > 0;
 
         // Utilidades
@@ -269,12 +272,14 @@
         }
 
         function drawMasked(target, img, reg, alpha, align, inner = 0.55) {
+            const b = regionBBox(reg, 10);
             if (alpha < 0.01 || !ready(img)) return;
-            const b = regionBBox(reg, 3);
             if (b.w <= 0 || b.h <= 0) return;
             mctx.clearRect(b.x, b.y, b.w, b.h);
             mctx.save();
-            mctx.beginPath(); mctx.rect(b.x, b.y, b.w, b.h); mctx.clip();
+            mctx.beginPath();
+            mctx.rect(b.x, b.y, b.w, b.h);
+            mctx.clip();
             drawCam(mctx, img, align);
             mctx.restore();
             aplicarMascara(mctx, b, inner);
@@ -282,6 +287,7 @@
             target.drawImage(maskCv, b.x, b.y, b.w, b.h, b.x, b.y, b.w, b.h);
             target.globalAlpha = 1;
         }
+
 
         // =====================================================================
         // PASO 5 · Mandíbula continua con resorte (anti-fantasma: pares adyacentes)
@@ -292,8 +298,8 @@
             // Bandas: <0.1 cerrada | 0.3–0.58 media | >0.78 abierta. Las transiciones son breves.
             const aMid = smoothstep(0.10, 0.30, jawOpen);
             const aHigh = smoothstep(0.58, 0.78, jawOpen);
-            if (aHigh < 0.99) drawMasked(c, imgMid, MOUTH, aMid, MID_ALIGN);
-            drawMasked(c, imgHigh, MOUTH, aHigh, HIGH_ALIGN);
+            if (aHigh < 0.99) drawMasked(c, imgMid, MOUTH, aMid, MID_ALIGN, 0.3);
+            drawMasked(c, imgHigh, MOUTH, aHigh, HIGH_ALIGN, 0.3);
         }
 
         // =====================================================================
@@ -341,6 +347,7 @@
             }
             entries.push({ t, open: 0, ci: s.length });
 
+            // Mapa charIndex → primer visema con ci >= charIndex (para re-sincronizar con onboundary)
             const charToIdx = new Int32Array(s.length + 1);
             let k = entries.length - 1;
             for (let ci = s.length; ci >= 0; ci--) {
@@ -362,8 +369,18 @@
         let speechSession = 0;
         let timers = [];
 
-        function timelineTime(now) { return speech.segOffset + (now - speech.segStart) * speech.speed; }
-        function iniciarTimeline(tl) { speech.timeline = tl; speech.idx = 0; speech.segStart = performance.now(); speech.segOffset = 0; speech.lastB = null; }
+        function timelineTime(now) {
+            return speech.segOffset + (now - speech.segStart) * speech.speed;
+        }
+
+        function iniciarTimeline(tl) {
+            speech.timeline = tl;
+            speech.idx = 0;
+            speech.segStart = performance.now();
+            speech.segOffset = 0;
+            speech.lastB = null;
+        }
+
         function onBoundary(e, tl) {
             if (speech.timeline !== tl || (e.name && e.name !== 'word')) return;
             speech.boundaries++;
@@ -371,6 +388,8 @@
             const ci = clamp(e.charIndex || 0, 0, tl.charToIdx.length - 1);
             const k = tl.charToIdx[ci];
             const targetT = tl.entries[k].t;
+
+            // Adaptar velocidad con la cadencia real de la voz
             if (speech.lastB) {
                 const dReal = now - speech.lastB.now, dTl = targetT - speech.lastB.t;
                 if (dReal > 80 && dTl > 0) {
@@ -379,7 +398,15 @@
                 }
             }
             speech.lastB = { now, t: targetT };
-            if (Math.abs(targetT - timelineTime(now)) > 60) { speech.segOffset = targetT; speech.segStart = now; speech.idx = k; }
+
+            // Re-sincronizar solo si la desviación es perceptible
+            if (Math.abs(targetT - timelineTime(now)) > 60) {
+                speech.segOffset = targetT;
+                speech.segStart = now;
+                speech.idx = k;
+            }
+
+            // PASO 9 · Énfasis en palabras en MAYÚSCULA
             const m = tl.texto.substr(ci).match(/^[A-Za-zÁÉÍÓÚÑÜáéíóúñü]+/);
             if (m && m[0].length >= 2 && m[0] === m[0].toUpperCase()) nod(0.9);
         }
@@ -392,6 +419,7 @@
             if (speech.idx > 0 && E[speech.idx].t > tm) speech.idx = tl.charToIdx[0];
             while (speech.idx < E.length - 1 && E[speech.idx + 1].t <= tm) speech.idx++;
             if (tm >= tl.total) {
+                // La línea de tiempo terminó pero la voz sigue: movimiento de relleno suave
                 const sigueHablando = !speech.simulated && synth && synth.speaking;
                 jawTarget = sigueHablando ? 0.35 + 0.3 * Math.abs(Math.sin(now * 0.016)) : 0;
             } else {
@@ -401,12 +429,13 @@
 
         function limpiarTexto(texto) {
             return (texto || '')
-                .replace(/[ *_#`>~|]/g, ' ')
+                .replace(/[*_#`>~|]/g, ' ')
                 .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}\u{200D}]/gu, '')
                 .replace(/\s+/g, ' ')
                 .trim();
         }
 
+        // Divide en oraciones (evita el corte de Chrome en textos largos)
         function dividirEnFrases(texto) {
             let partes = texto.match(/[^.!?…]+(?:[.!?…]+|$)["')\]]*\s*/g) || [texto];
             const out = [];
@@ -425,6 +454,7 @@
         }
 
         function limpiarTimers() { timers.forEach(clearTimeout); timers = []; }
+
         function finalizarHabla() {
             limpiarTimers();
             speech.active = false;
@@ -437,6 +467,7 @@
             statusText.innerText = "Listo para tu siguiente pregunta.";
         }
 
+        // Fallback sin audio (sin voces o el navegador no inicia la síntesis)
         function simularSecuencia(timelines, session) {
             speech.simulated = true;
             let i = 0;
@@ -455,55 +486,42 @@
         // PASO 8 · Vida en reposo: parpadeo, respiración, micro-movimiento
         // =====================================================================
         let nextBlink = performance.now() + 2500, blinkStart = -1, dobleParpadeo = false;
+
+        // Devuelve 0 (ojos abiertos) → 1 (ojos cerrados)
         function actualizarParpadeo(now) {
-            if (blinkStart < 0 && now >= nextBlink) blinkStart = now;
-            if (blinkStart < 0) return 0;
-            const e = now - blinkStart, C = 70, Hd = 40, O = 100;
-            let c;
-            if (e < C) c = e / C;
-            else if (e < C + Hd) c = 1;
-            else if (e < C + Hd + O) c = 1 - (e - C - Hd) / O;
-            else {
-                blinkStart = -1;
-                if (!dobleParpadeo && Math.random() < 0.15) { dobleParpadeo = true; nextBlink = now + 120; }
-                else { dobleParpadeo = false; nextBlink = now + 2000 + Math.random() * 4000; }
+            if (blinkStart < 0) {
+                if (now >= nextBlink) {
+                    blinkStart = now;
+                    dobleParpadeo = Math.random() < 0.15;
+                }
                 return 0;
             }
-            return c * c * (3 - 2 * c);
+            const DUR = 180;                                   // duración del parpadeo (ms)
+            const t = (now - blinkStart) / DUR;
+            if (t >= 1) {
+                blinkStart = -1;
+                if (dobleParpadeo) { dobleParpadeo = false; nextBlink = now + 120; }
+                else nextBlink = now + 2500 + Math.random() * 3500;
+                return 0;
+            }
+            // cierra rápido (35 %) y abre más lento
+            return t < 0.35 ? smoothstep(0, 0.35, t) : 1 - smoothstep(0.35, 1, t);
         }
 
+        // Párpados: mezcla difuminada de la imagen con los ojos cerrados (misma técnica que la boca)
         function dibujarParpados(c, closure) {
-            if (closure < 0.02 || !ready(imgIdle)) return;
-            const s = camEff.s, k = imgIdle.naturalWidth / SRC_W;
-            for (const e of EYES) {
-                const p = srcToCanvas(e.x, e.y), rx = e.rx * s, ry = e.ry * s;
-                const top = p.y - ry * 1.5;
-                const lidH = ry * 3.0 * closure;
-                c.save();
-                c.beginPath();
-                c.ellipse(p.x, p.y, rx * 1.25, ry * 1.6, 0, 0, Math.PI * 2);
-                c.clip();
-                c.drawImage(imgIdle,
-                    (e.x - e.rx * 1.3) * k, (e.y + LID_DY) * k, e.rx * 2.6 * k, 4 * k,
-                    p.x - rx * 1.3, top, rx * 2.6, lidH);
-                const yb = top + lidH;
-                c.strokeStyle = `rgba(35,25,28,${0.6 * closure})`;
-                c.lineWidth = Math.max(1, 0.9 * s);
-                c.beginPath();
-                c.moveTo(p.x - rx * 1.05, yb - ry * 0.35);
-                c.quadraticCurveTo(p.x, yb + ry * 0.35, p.x + rx * 1.05, yb - ry * 0.35);
-                c.stroke();
-                c.restore();
-            }
+            if (closure < 0.02 || !ready(imgBlink)) return;
+            for (const r of EYE_BLEND) drawMasked(c, imgBlink, r, closure, BLINK_ALIGN, 0.5);
         }
 
         const head = { dx: 0, dy: 0, rot: 0 };
         let headAmp = 0.5;
+
         function dibujarCabeza() {
             const b = regionBBox(HEAD, 8);
             if (b.w <= 0 || b.h <= 0) return;
             const s = camEff.s;
-            const piv = srcToCanvas(HEAD.x, HEAD.y + HEAD.ry * 0.75);
+            const piv = srcToCanvas(HEAD.x, HEAD.y + HEAD.ry * 0.75);   // pivote en el cuello
             hctx.clearRect(b.x, b.y, b.w, b.h);
             hctx.save();
             hctx.beginPath(); hctx.rect(b.x, b.y, b.w, b.h); hctx.clip();
@@ -520,7 +538,9 @@
         // PASO 9 · Gestos de énfasis
         // =====================================================================
         let nodPos = 0, nodVel = 0, tilt = 0, tiltTarget = 0;
+
         function nod(fuerza = 1) { nodVel += fuerza; }
+
         function gestosDeFrase(frase) {
             camPulse = Math.max(camPulse, 0.012);
             const f = frase.trim();
@@ -533,6 +553,7 @@
         // Bucle de render
         // =====================================================================
         let lastNow = performance.now(), acc = 0, fps = 60;
+
         function drawFrame(now) {
             const dt = clamp(now - lastNow, 1, 100);
             lastNow = now;
@@ -576,7 +597,7 @@
                 ctx.globalAlpha = 1;
                 drawCam(ctx, imgIdle);
 
-                // 2. Cara compuesta (idle + boca + párpados) en su región
+                // 2. Cara compuesta (idle + boca + ojos) en su región
                 const fb = regionBBox(HEAD, 16);
                 fctx.clearRect(fb.x, fb.y, fb.w, fb.h);
                 fctx.save();
@@ -591,18 +612,7 @@
 
                 if (DEBUG) dibujarDebug(closure);
             }
-            if (ready(imgIdle) && ready(imgMid) && ready(imgHigh)) {
-                requestAnimationFrame(drawFrame);
-            } else {
-                const startIfReady = () => {
-                    if (ready(imgIdle) && ready(imgMid) && ready(imgHigh)) {
-                        requestAnimationFrame(drawFrame);
-                    }
-                };
-                imgIdle.addEventListener('load', startIfReady);
-                imgMid.addEventListener('load', startIfReady);
-                imgHigh.addEventListener('load', startIfReady);
-            }
+            requestAnimationFrame(drawFrame);
         }
 
         function dibujarDebug(closure) {
@@ -618,6 +628,7 @@
             };
             ell(MOUTH, '#f38ba8');
             EYES.forEach(e => ell(e, '#a6e3a1'));
+            EYE_BLEND.forEach(e => ell(e, 'rgba(166,227,161,0.4)'));
             ell(HEAD, '#f9e2af');
             ctx.fillStyle = 'rgba(17,17,27,0.78)';
             ctx.fillRect(10, 10, 360, 168);
@@ -645,31 +656,28 @@
             });
         }
 
-        if (ready(imgIdle) && ready(imgMid) && ready(imgHigh)) {
-            requestAnimationFrame(drawFrame);
-        } else {
-            const startIfReady = () => {
-                if (ready(imgIdle) && ready(imgMid) && ready(imgHigh)) {
-                    requestAnimationFrame(drawFrame);
-                }
-            };
-            imgIdle.addEventListener('load', startIfReady);
-            imgMid.addEventListener('load', startIfReady);
-            imgHigh.addEventListener('load', startIfReady);
-        }
+        requestAnimationFrame(drawFrame);
 
         // Síntesis de voz
         const synth = window.speechSynthesis;
         let vocesDisponibles = [];
-        function cargarVoces() { if (synth) { vocesDisponibles = synth.getVoices(); } }
+        function cargarVoces() {
+            if (synth) {
+                vocesDisponibles = synth.getVoices();
+            }
+        }
         cargarVoces();
-        if (synth && synth.onvoiceschanged !== undefined) { synth.onvoiceschanged = cargarVoces; }
+        if (synth && synth.onvoiceschanged !== undefined) {
+            synth.onvoiceschanged = cargarVoces;
+        }
 
         function seleccionarVozFemeninaLatina(voces) {
             if (!voces || voces.length === 0) return null;
+
             const nombresMasculinos = ['jorge', 'pablo', 'raul', 'julio', 'miguel', 'carlos', 'mateo', 'tomas', 'alonso', 'enrique', 'david', 'male', 'hombre'];
             const nombresFemeninosLatinos = ['sabina', 'dalia', 'salome', 'paulina', 'sofia', 'sofi', 'camila', 'jimena', 'hilda', 'lupe', 'francisca', 'zaira', 'paloma', 'monica', 'luz', 'google español', 'helena', 'elena'];
             const codigosLatinos = ['es-co', 'es-mx', 'es-us', 'es-ar', 'es-cl', 'es-pe', 'es-419'];
+
             let voz = voces.find(v => {
                 const lang = v.lang.toLowerCase();
                 const name = v.name.toLowerCase();
@@ -679,6 +687,7 @@
                 return esLatino && esFemenina && !esMasculino;
             });
             if (voz) return voz;
+
             voz = voces.find(v => {
                 const lang = v.lang.toLowerCase();
                 const name = v.name.toLowerCase();
@@ -687,6 +696,7 @@
                 return esLatino && !esMasculino;
             });
             if (voz) return voz;
+
             voz = voces.find(v => {
                 const lang = v.lang.toLowerCase();
                 const name = v.name.toLowerCase();
@@ -695,10 +705,12 @@
                 return esEspanol && !esMasculino;
             });
             if (voz) return voz;
+
             return voces.find(v => v.lang.toLowerCase().startsWith('es')) || null;
         }
 
         const RATE = 1.0;
+
         function hablar(textoOriginal) {
             const session = ++speechSession;
             if (synth) synth.cancel();
@@ -730,6 +742,7 @@
                     if (vozLatina) { u.voice = vozLatina; u.lang = vozLatina.lang; }
                     else { u.lang = 'es-MX'; }
                     u.rate = RATE;
+
                     u.onstart = () => {
                         if (session !== speechSession) return;
                         if (speech.simulated) { limpiarTimers(); speech.simulated = false; programarSeguridad(session, totalEstimado); }
@@ -737,19 +750,31 @@
                         iniciarTimeline(tl);
                         gestosDeFrase(frase);
                     };
-                    u.onboundary = (e) => { if (session !== speechSession) return; onBoundary(e, tl); };
+                    u.onboundary = (e) => {
+                        if (session !== speechSession) return;
+                        onBoundary(e, tl);
+                    };
                     u.onend = () => {
                         if (session !== speechSession) return;
                         if (i === frases.length - 1) finalizarHabla();
-                        else if (speech.timeline === tl) speech.timeline = null;
+                        else if (speech.timeline === tl) speech.timeline = null;   // boca cerrada entre frases
                     };
-                    u.onerror = (e) => { if (session !== speechSession) return; if (e.error === 'interrupted' || e.error === 'canceled') return; console.warn('SpeechSynthesis error:', e.error); finalizarHabla(); };
+                    u.onerror = (e) => {
+                        if (session !== speechSession) return;
+                        if (e.error === 'interrupted' || e.error === 'canceled') return;
+                        console.warn('SpeechSynthesis error:', e.error);
+                        finalizarHabla();
+                    };
                     synth.speak(u);
                 });
-                timers.push(setTimeout(() => { if (session === speechSession && !speech.started) simularSecuencia(timelines, session); }, 2000));
+
+                // Si la voz no arranca en 2 s, animar igual (sin audio)
+                timers.push(setTimeout(() => {
+                    if (session === speechSession && !speech.started) simularSecuencia(timelines, session);
+                }, 2000));
                 programarSeguridad(session, totalEstimado);
             } catch (err) {
-                console.warn('SpeechSynthesis error:', err);
+                console.warn("SpeechSynthesis error:", err);
                 simularSecuencia(timelines, session);
             }
         }
@@ -764,11 +789,107 @@
             }, totalEstimado * 1.6 + 4000));
         }
 
+        // La clave de API se guarda solo en el navegador (localStorage); no va escrita en el código
         function getActiveApiKey() {
-            const activeNewKey = atob('QVEuQWI4Uk42S0RzbUtfWS01TjBwYjk0RTd2dTRGWVQ5OXVKVjN0WmlCVHJWTGJRU1dxRXc=');
-            const saved = localStorage.getItem('GEMINI_API_KEY');
-            // Placeholder: implementation for API key handling can be added here.
+            return localStorage.getItem('GEMINI_API_KEY') || '';
         }
+
+        function cambiarApiKey() {
+            const actual = getActiveApiKey();
+            const nueva = prompt("🔑 Ingresa tu API Key de Google AI Studio (empieza por AIzaSy...):\n\nSi no tienes una, créala gratis en: https://aistudio.google.com/app/apikey", actual);
+            if (nueva && nueva.trim()) {
+                localStorage.setItem('GEMINI_API_KEY', nueva.trim());
+                alert("✅ API Key guardada correctamente.");
+                statusText.innerText = "API Key actualizada. Haz tu pregunta.";
+            }
+        }
+
+        async function consultarGemini(preguntaUsuario) {
+            let rawKey = getActiveApiKey();
+            if (!rawKey) { cambiarApiKey(); rawKey = getActiveApiKey(); }
+            if (!rawKey) throw new Error("Falta la clave API. Haz clic en '🔑 Clave API' para configurarla.");
+
+            const modelos = ['gemini-2.5-flash', 'gemini-3.6-flash', 'gemini-flash-latest', 'gemini-3.5-flash'];
+
+            const ahoraColombia = new Date().toLocaleString('es-CO', {
+                timeZone: 'America/Bogota',
+                dateStyle: 'full',
+                timeStyle: 'short'
+            });
+
+            const promptContexto = `Información de contexto en tiempo real: La fecha y hora actual exacta en Colombia es ${ahoraColombia}.
+Actúa como un asistente virtual interactivo conversacional muy amigable, simpático y expresivo. Tus respuestas deben ser sumamente breves y directas (máximo 2 frases u oraciones cortas), ya que tu respuesta será leída en voz alta por un avatar y no queremos aburrir al usuario. Da siempre datos precisos usando el contexto y nunca uses corchetes ni texto comodín. Responde de forma natural a esto: "${preguntaUsuario}"`;
+
+            const payload = {
+                contents: [{
+                    parts: [{ text: promptContexto }]
+                }]
+            };
+
+            let ultimoError = '';
+
+            for (const model of modelos) {
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${rawKey}`;
+                try {
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data && data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts) {
+                            const partConTexto = data.candidates[0].content.parts.find(p => p.text);
+                            if (partConTexto && partConTexto.text) {
+                                return partConTexto.text;
+                            }
+                        }
+                    } else {
+                        const errJson = await response.json().catch(() => ({}));
+                        ultimoError = `HTTP ${response.status}: ${errJson.error?.message || response.statusText}`;
+                        console.warn(`Intento fallido con ${model}:`, ultimoError);
+                    }
+                } catch (err) {
+                    ultimoError = err.message || 'Error de conexión de red';
+                    console.warn(`Error de red con ${model}:`, err);
+                }
+            }
+
+            if (ultimoError.includes("401") || ultimoError.includes("UNAUTHENTICATED") || ultimoError.includes("API_KEY_SERVICE_BLOCKED")) {
+                setTimeout(() => {
+                    if (confirm("⚠️ La clave de API de Gemini devolvió Error 401 (Credenciales bloqueadas por Google).\n\n¿Deseas ingresar tu clave de API gratuita de Google AI Studio?")) {
+                        cambiarApiKey();
+                    }
+                }, 400);
+            }
+
+            throw new Error(`Error en API Gemini (${ultimoError}). Haz clic en '🔑 Clave API' para actualizarla.`);
+        }
+
+        chatForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const mensajeUsuario = userInput.value.trim();
+            if (!mensajeUsuario) return;
+
+            userInput.disabled = true;
+            btnSend.disabled = true;
+            statusText.innerText = `Pensando respuesta para: "${mensajeUsuario}"...`;
+
+            try {
+                const respuestaIA = await consultarGemini(mensajeUsuario);
+                if (respuestaIA) {
+                    userInput.value = '';
+                    hablar(respuestaIA);
+                }
+            } catch (err) {
+                console.error("Error al consultar Gemini:", err);
+                statusText.innerText = `⚠️ ${err.message}`;
+                userInput.disabled = false;
+                btnSend.disabled = false;
+            }
+        });
     </script>
 </body>
 
