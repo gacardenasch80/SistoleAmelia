@@ -171,15 +171,24 @@
         // PASO 2 · Geometría (coordenadas en la imagen ORIGINAL 848x1264)
         // Calibra con ?debug: haz clic en el centro de cada ojo / la boca
         // =====================================================================
-        const SRC_W = 848, SRC_H = 1264;
-        const MOUTH = { x: 442, y: 335, rx: 38, ry: 30 };          // boca
+        const MOUTH = { x: 428, y: 341, rx: 46, ry: 32 };
         const EYES = [
+            { x: 406, y: 281, rx: 13, ry: 6 },   // ojo izquierdo
+            { x: 456, y: 285, rx: 13, ry: 6 }    // ojo derecho
+        ];
+        const HEAD = { x: 430, y: 272, rx: 74, ry: 112 };
+
+        //const MOUTH = { x: 442, y: 335, rx: 46, ry: 32 };   // región más ancha para cubrir las comisuras de idle
+        const MID_ALIGN = { dx: -3, dy: 2.5 };              // dx negativo = mueve la boca hacia la izquierda
+        const HIGH_ALIGN = { dx: -3, dy: 0 };
+        const MOUTH_INNER = 0.55;                           // zona sólida de la máscara (antes 0.3)
+
+        const SRC_W = 848, SRC_H = 1264;
+        /*const EYES = [
             { x: 388, y: 281, rx: 13, ry: 6 },                      // ojo izquierdo (REVISAR con ?debug)
             { x: 468, y: 285, rx: 13, ry: 6 }                       // ojo derecho
-        ];
-        const HEAD = { x: 442, y: 272, rx: 74, ry: 112 };            // cabeza (micro-movimiento)
-        const MID_ALIGN = { dx: 0, dy: 2.5 };                        // talking_mid.jpg está ~2.5px más arriba
-        const HIGH_ALIGN = { dx: 0, dy: 0 };
+        ];*/
+        //const HEAD = { x: 442, y: 272, rx: 74, ry: 112 };            // cabeza (micro-movimiento)
         const BLINK_ALIGN = null;                                    // si idle_blink.jpg sale desplazado: { dx: 0, dy: 1 }
         const DEBUG = new URLSearchParams(location.search).has('debug');
 
@@ -295,6 +304,13 @@
         let jawTarget = 0, jawOpen = 0, jawVel = 0;
 
         function dibujarBoca(c) {
+            const aMid = smoothstep(0.10, 0.30, jawOpen);
+            const aHigh = smoothstep(0.58, 0.78, jawOpen);
+            if (aHigh < 0.99) drawMasked(c, imgMid, MOUTH, aMid, MID_ALIGN, MOUTH_INNER);
+            drawMasked(c, imgHigh, MOUTH, aHigh, HIGH_ALIGN, MOUTH_INNER);
+        }
+
+        function dibujarBoca2(c) {
             // Bandas: <0.1 cerrada | 0.3–0.58 media | >0.78 abierta. Las transiciones son breves.
             const aMid = smoothstep(0.10, 0.30, jawOpen);
             const aHigh = smoothstep(0.58, 0.78, jawOpen);
