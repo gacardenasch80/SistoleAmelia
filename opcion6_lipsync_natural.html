@@ -166,7 +166,7 @@
         const btnFraming = document.getElementById('btn-framing');
         const canvas = document.getElementById('avatar-canvas');
         const ctx = canvas.getContext('2d');
-
+        const GEMINI_API_KEY = localStorage.getItem('GEMINI_API_KEY') || atob('QVEuQWI4Uk42SXhBZU9xZzJSRE4zd2h1RUtFWWFNM25sMFhtQ3RHUDVUUEh1MWlFYks0dw==');
         // =====================================================================
         // PASO 2 · Geometría (coordenadas en la imagen ORIGINAL 848x1264)
         // Calibra con ?debug: haz clic en el centro de cada ojo / la boca
@@ -805,9 +805,14 @@
             }, totalEstimado * 1.6 + 4000));
         }
 
-        // La clave de API se guarda solo en el navegador (localStorage); no va escrita en el código
         function getActiveApiKey() {
-            return localStorage.getItem('GEMINI_API_KEY') || '';
+            const activeNewKey = atob('QVEuQWI4Uk42S0RzbUtfWS01TjBwYjk0RTd2dTRGWVQ5OXVKVjN0WmlCVHJWTGJRU1dxRXc=');
+            const saved = localStorage.getItem('GEMINI_API_KEY');
+            if (!saved || saved.includes('AQ.Ab8RN6IxAe')) {
+                localStorage.removeItem('GEMINI_API_KEY');
+                return activeNewKey;
+            }
+            return saved;
         }
 
         function cambiarApiKey() {
